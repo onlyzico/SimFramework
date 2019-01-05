@@ -10,7 +10,12 @@ if ( ! defined( 'AEO' ) )
 
 /*----------------------------------------------------------------------------*/
 
-$aeo_config['database'] = require_once APP . '/config/database.php';
+if ( IS_LOCAL ) {
+  $aeo_config['database'] = require_once APP . '/config/database.local.php';
+} else {
+  $aeo_config['database'] = require_once APP . '/config/database.php';
+}
+
 $aeo_config['options'] = require_once APP . '/config/options.php';
 $aeo_config['routes'] = require_once APP . '/config/routes.php';
 
