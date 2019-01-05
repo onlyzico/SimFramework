@@ -1,0 +1,167 @@
+<?php
+
+/**
+ * @copyright Dicky Syaputra
+ * @author Dicky Syaputra
+ */
+
+if ( ! defined( 'AEO' ) )
+  die( 'No direct script access allowed!' );
+
+/*----------------------------------------------------------------------------*/
+
+require APP . '/libraries/class.resize.php';
+
+/*----------------------------------------------------------------------------*/
+
+if ( is_route( 'admin_add_gallery_category' ) && ! current_user_can( 'admin_add_gallery_category' ) || is_route( 'admin_edit_gallery_category' ) && ! current_user_can( 'admin_edit_gallery_category' ) )
+  error_notice( 'You don\'t have permissions to accessing this page' );
+
+/*----------------------------------------------------------------------------*/
+
+if ( is_route( 'admin_edit_gallery_category' ) ) {
+  $id = get_route_vars( 0 );
+  $category = $aeo_db->get_row( "SELECT id,name,image FROM gallery_categories WHERE md5(id) = '$id'" );
+
+  if ( ! $category ) {
+    $aeo_router->set_found( false );
+    return false;
+  } else {
+    $edit = true;
+  }
+}
+
+/*----------------------------------------------------------------------------*/
+
+else {
+  $edit = false;
+  $category = [
+    'name' => '',
+    'image' => ''
+  ];
+}
+
+/*----------------------------------------------------------------------------*/
+
+if ( isset( $_POST['category'] ) && isset( $_POST['csrf_token'] ) && $_POST['csrf_token'] == csrf_token() ) {
+  $category_input = sanitize_input( $_POST['category'] );
+
+  if ( empty( $category_input['name'] ) )
+    $error_msg[] = 'Silahkan isi nama kategori';
+
+  if ( ! isset( $error_msg ) ) {
+    if ( isset( $_FILES['image']['name'] ) && $_FILES['image']['name'] ) {
+      $image_file = $_FILES['image'];
+      if ( ! in_array( $image_file['type'], [ 'image/jpeg', 'image/jpg', 'image/png', 'image/gif' ] ) ) {
+        $error_msg[] = 'Gambar harus menggunakan ekstensi berikut: .jpg, .jpeg, .png atau .gif';
+      } elseif ( $image_file['size'] > ( ( 1024 * 1024 ) * 3 ) ) {
+        $error_msg[] = 'Ukuran gambar maksimal adalah 3MB';
+      } elseif ( $image_file['error'] > 0 ) {
+        $error_msg[] = 'File gambar error';
+      } else {
+        $image_file_tmp = $image_file['tmp_name'];
+        $image = time() . '_' . $image_file['name'];
+      }
+    }
+  }
+
+  if ( $edit && isset( $category_input['image'] ) && empty( $category_input['image'] ) && $category['image'] ) {
+    $old_image_file = BASE . '/uploads/gallery-categories/' . $category['image'];
+    $old_1000_600_image_file = BASE . '/uploads/gallery-categories/1000-500-' . $category['image'];
+
+    if ( file_exists( $old_image_file ) )
+      unlink( $old_image_file );
+
+    if ( file_exists( $old_1000_600_image_file ) )
+      unlink( $old_1000_600_image_file );
+  }
+
+  if ( isset( $error_msg ) && isset( $_FILES['image']['name'] ) && $_FILES['image']['name'] )
+    $category_input['image'] = '';
+
+  $category = array_merge( $category, $category_input );
+
+  if ( ! isset( $error_msg ) ) {
+    if ( isset( $image ) ) {
+      if ( ! is_dir( BASE . '/uploads/gallery-categories' ) )
+        mkdir( BASE . '/uploads/gallery-categories', 0775, true );
+
+      move_uploaded_file( $image_file_tmp, BASE . '/uploads/gallery-categories/' . $image );
+
+      $resize_photo = new resize( BASE . '/uploads/gallery-categories/' . $image );
+      $resize_photo->resizeImage( 1000, 500, 'crop' );
+      $resize_photo->saveImage( BASE . '/uploads/gallery-categories/1000-500-' . $image, 100 );
+
+      $category['image'] = $image;
+    }
+
+    if ( $edit ) {
+      if ( isset( $category['id'] ) ) {
+        $id = $category_id = $category['id'];
+        unset( $category['id'] );
+      }
+
+      $category['updated_datetime'] = time();
+
+      $aeo_db->update( 'gallery_categories', $category, [ 'id' => $id ] );
+
+      $id = md5( $id );
+      $success_msg = 'Kategori berhasil diperbarui';
+    } else {
+      $category['id'] = $category_id = $aeo_db->next_id( 'gallery_categories' );
+      $category['added_datetime'] = $category['updated_datetime'] = time();
+
+      $aeo_db->insert( 'gallery_categories', $category );
+
+      $id = md5( $category['id'] );
+      $success_msg = 'Kategori berhasil ditambahkan';
+    }
+
+    create_session( 'admin_gallery_category_edit_success_msg', $success_msg );
+
+    if ( current_user_can( 'admin_edit_gallery_category' ) ) {
+      redirect( admin_url() . '/galleries/categories/' . $id . '/edit' );
+    } else {
+      redirect( admin_url() . '/galleries/categories' );
+    }
+  }
+}
+
+elseif ( isset( $_POST['action'] ) && $_POST['action'] && isset( $_POST['csrf_token'] ) && $_POST['csrf_token'] == csrf_token() ) {
+  if ( $_POST['action'] == 'delete' ) {
+    $data_before = $aeo_db->get_row( "SELECT image FROM gallery_categories WHERE id = $category[id]" );
+
+    if ( isset( $data_before['image'] ) && $data_before['image'] ) {
+      if ( is_file( BASE . '/uploads/gallery-categories/' . $data_before['image'] ) )
+        unlink( BASE . '/uploads/gallery-categories/' . $data_before['image'] );
+
+      if ( is_file( BASE . '/uploads/gallery-categories/1000-500-' . $data_before['image'] ) )
+        unlink( BASE . '/uploads/gallery-categories/1000-500-' . $data_before['image'] );
+    }
+
+    $aeo_db->delete( 'gallery_categories', [ 'id' => $category['id'] ] );
+
+    create_session( 'admin_gallery_categories_success_msg', 'Kategori galeri barhasil dihapus' );
+
+    redirect( admin_url() . '/galleries/categories' );
+  }
+
+  redirect( canonical_url() );
+}
+
+if ( isset( $error_msg ) && is_array( $error_msg ) )
+  $error_msg = implode( $error_msg, '<br />' );
+
+/*----------------------------------------------------------------------------*/
+
+if ( get_session( 'admin_gallery_category_edit_success_msg' ) ) {
+  $success_msg = get_session( 'admin_gallery_category_edit_success_msg' );
+  delete_session( 'admin_gallery_category_edit_success_msg' );
+}
+
+/*----------------------------------------------------------------------------*/
+
+$aeo['site_title'].= $aeo['page_title'] = ( is_route( 'admin_add_gallery_category' ) ? 'Tambah' : 'Edit' ) . ' Kategori Galeri';
+$aeo['breadcrumb_title'] = ( is_route( 'admin_add_gallery_category' ) ? 'Tambah' : 'Edit' );
+
+$aeo['load_scripts'][] = 'https://cdnjs.cloudflare.com/ajax/libs/ckeditor/4.10.0/ckeditor.js';
