@@ -20,6 +20,8 @@ date_default_timezone_set( 'Asia/Jakarta' );
  * Main constants
  */
 
+define( 'IS_LOCAL', ( isset( $_SERVER['HTTP_HOST'] ) && $_SERVER['HTTP_HOST'] === 'localhost' ) ? true : false );
+
 define( 'AEO', dirname( __FILE__ ), true );
 define( 'HOST', $_SERVER['HTTP_HOST'], true );
 define( 'BASE', str_replace( "\\", '/', AEO ), true );
